@@ -4,6 +4,11 @@ provider:
   name: aws
   runtime: nodejs20.x
   region: us-east-1
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:PutItem
+      Resource: "*"
 
 plugins:
   - serverless-offline
@@ -15,3 +20,10 @@ functions:
       - http:
           path: /hello
           method: get
+
+  createCustomer:
+    handler: src/handlers/createCustomer.handler
+    events:
+      - http:
+          path: /clientes
+          method: post
