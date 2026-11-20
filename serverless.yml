@@ -39,7 +39,7 @@ resources:
     ClientesFidelidadeTable:
       Type: AWS::DynamoDB::Table
       Properties:
-        TableName: ClientesFidelidade
+        TableName: ClientsFidelity
         AttributeDefinitions:
           - AttributeName: id
             AttributeType: S

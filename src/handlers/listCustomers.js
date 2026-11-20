@@ -1,6 +1,6 @@
 const customerService = require("../services/customerService");
 
-module.export.handler = async (event) => {
+module.exports.handler = async (event) => {
     try {
         const clients = await customerService.listClients();
 

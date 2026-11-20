@@ -22,7 +22,7 @@ const createClient = async (clientData) => {
         Item: newCLient
     })
 
-    await dynamoDb.send(comand);
+    await dynamoDB.send(comand);
     return newCLient;
 };
 
@@ -32,7 +32,7 @@ const listClients = async () => {
     });
 
     const result = await dynamoDB.send(command);
-    return result.Itens || [];
+    return result.Items || [];
 }
 
 module.exports = {
