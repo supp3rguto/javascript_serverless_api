@@ -1,8 +1,8 @@
-const dynamoDb = require('../database/dyanmoClient');
-const { PutCommand } = require("@aws-sdk/lib-dynamodb");
+const dynamoDB = require('../database/dynamoClient');
+const { PutCommand, ScanCommand } = require("@aws-sdk/lib-dynamodb");
 const crypto = require('crypto');
 
-const TABLE_NAME = 'ClientsFidelidade';
+const TABLE_NAME = 'ClientsFidelity';
 
 const createClient = async (clientData) => {
     if (!clientData.name || !clientData.email) {
@@ -23,10 +23,19 @@ const createClient = async (clientData) => {
     })
 
     await dynamoDb.send(comand);
-
     return newCLient;
 };
 
+const listClients = async () => {
+    const command = new ScanCommand({
+        TableName: TABLE_NAME
+    });
+
+    const result = await dynamoDB.send(command);
+    return result.Itens || [];
+}
+
 module.exports = {
-    createClient
+    createClient,
+    listClients
 };

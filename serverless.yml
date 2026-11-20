@@ -8,6 +8,7 @@ provider:
     - Effect: Allow
       Action:
         - dynamodb:PutItem
+        - dynamodb:Scan
       Resource: "*"
 
 plugins:
@@ -20,10 +21,29 @@ functions:
       - http:
           path: /hello
           method: get
-
   createCustomer:
     handler: src/handlers/createCustomer.handler
     events:
       - http:
           path: /clientes
           method: post
+  listCustomers:
+    handler: src/handlers/listCustomers.handler
+    events:
+      - http:
+          path: /clientes
+          method: get
+
+resources:
+  Resources:
+    ClientesFidelidadeTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ClientesFidelidade
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
