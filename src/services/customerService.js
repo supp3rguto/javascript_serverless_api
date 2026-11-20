@@ -1,8 +1,10 @@
 const dynamoDB = require('../database/dynamoClient');
-const { PutCommand, ScanCommand } = require("@aws-sdk/lib-dynamodb");
+const { PutCommand, ScanCommand, GetCommand } = require("@aws-sdk/lib-dynamodb");
 const crypto = require('crypto');
 
 const TABLE_NAME = 'ClientsFidelity';
+const UUID_V4_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const createClient = async (clientData) => {
     if (!clientData.name || !clientData.email) {
@@ -35,7 +37,25 @@ const listClients = async () => {
     return result.Items || [];
 }
 
+const getClientById = async (id) => {
+    if (!id || !UUID_V4_REGEX.test(id)) {
+        const error = new Error("Invalid client ID format. Expected a valid UUID.");
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const command = new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { id }
+    });
+
+    const result = await dynamoDB.send(command);
+
+    return result.Item || null;
+};
+
 module.exports = {
     createClient,
-    listClients
+    listClients,
+    getClientById
 };

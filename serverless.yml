@@ -1,5 +1,8 @@
 service: my-serverless-api
 
+plugins:
+  - serverless-offline
+
 provider:
   name: aws
   runtime: nodejs20.x
@@ -9,10 +12,8 @@ provider:
       Action:
         - dynamodb:PutItem
         - dynamodb:Scan
+        - dynamodb:GetItem
       Resource: "*"
-
-plugins:
-  - serverless-offline
 
 functions:
   hello:
@@ -25,13 +26,19 @@ functions:
     handler: src/handlers/createCustomer.handler
     events:
       - http:
-          path: /clientes
+          path: /clients
           method: post
   listCustomers:
     handler: src/handlers/listCustomers.handler
     events:
       - http:
-          path: /clientes
+          path: /clients
+          method: get
+  getCustomer:
+    handler: src/handlers/getCustomer.handler
+    events:
+      - http:
+          path: /clients/{id}
           method: get
 
 resources:
