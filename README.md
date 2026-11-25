@@ -1,112 +1,97 @@
-# javascript_serverless_api
+# Serverless Loyalty API (AWS Lambda + DynamoDB)
 
-API REST serverless em Node.js criada como laboratório prático para fixar os conceitos do curso **AWS Cloud Practitioner Essentials** (AWS Training & Certification).
+A RESTful Serverless API built with Node.js, Serverless Framework, AWS Lambda, API Gateway, and Amazon DynamoDB. Originally designed around a coffee shop loyalty program scenario from AWS Cloud Practitioner Essentials, the project runs **100% locally** using Docker Compose and `serverless-offline` without requiring an active AWS account.
 
-A proposta aqui foi tirar do papel o cenário usado ao longo do curso — um programa de fidelidade de cafeteria — e implementar o fluxo de ponta a ponta rodando **100% localmente**, simulando API Gateway, AWS Lambda e Amazon DynamoDB sem depender de conta ativa ou cartão cadastrado na AWS.
+## Architecture & Engineering Decisions
 
-## O que está sendo praticado
+- **Serverless Compute (AWS Lambda + API Gateway):** Event-driven HTTP handlers emulated locally with Serverless Framework and `serverless-offline`.
+- **Layered Separation:** Handlers (`src/handlers/`) are strictly responsible for HTTP parsing and response mapping; business validation, UUID verification, and DynamoDB SDK v3 commands live in `src/services/customerService.js`.
+- **Atomic Point Updates (`UpdateCommand`):** `PATCH /clients/{id}/points` uses `UpdateExpression` (`if_not_exists(fidelityPoints, :zero) + :delta`) paired with `ConditionExpression: "attribute_exists(id)"` to prevent race conditions and eliminate read-modify-write round trips.
+- **Conditional Deletes (`DeleteCommand`):** `DELETE /clients/{id}` enforces `ConditionExpression: "attribute_exists(id)"` so deleting a non-existent record deterministically returns `404 Not Found`.
+- **Point Reads vs. Full Scans (`GetCommand` vs. `ScanCommand`):** Partition key (`id`, UUID v4) validation runs before hitting DynamoDB to avoid wasted read capacity on malformed requests.
+- **Infrastructure as Code (IaC):** Functions, HTTP routes, DynamoDB table definition (`ClientsFidelity`), and least-privilege IAM permissions are declared in `serverless.yml`.
+- **Containerized Local DB:** Instead of relying on the unmaintained `serverless-dynamodb-local` plugin (which depends on AWS SDK v2 and causes credential conflicts), DynamoDB Local runs via Docker Compose alongside an automated `aws-cli` init container that provisions the `ClientsFidelity` table on startup.
 
-Mais do que montar um CRUD, cada parte do repositório mapeia um conceito teórico visto nas anotações do curso:
+## Tech Stack
 
-- **Computação Serverless (AWS Lambda + API Gateway):** funções isoladas orientadas a eventos HTTP, emuladas localmente com Serverless Framework e `serverless-offline`.
-- **Banco NoSQL Chave-Valor/Documento (Amazon DynamoDB):** modelagem sem esquema rígido com chave de partição `id` (UUID v4) na tabela `ClientsFidelity`.
-- **Leitura pontual vs. varredura completa (`GetCommand` vs. `ScanCommand`):** comparação prática entre buscar um registro direto pela chave de partição (leitura direcionada) e varrer a tabela inteira com `Scan`, além de validar o formato do UUID antes de consumir leitura no banco.
-- **Infraestrutura como Código (IaC):** declaração das funções, rotas HTTP, tabela DynamoDB e permissões de IAM (princípio do menor privilégio: `PutItem`, `Scan`, `GetItem`) no `serverless.yml`.
-- **Interação programática com a AWS:** uso combinado do **AWS CLI** (criação e inspeção da tabela local) e do **AWS SDK for JavaScript v3** (comunicação da aplicação com o banco).
+- **Runtime:** Node.js `v20.x`
+- **Framework:** Serverless Framework + `serverless-offline`
+- **AWS SDK:** `@aws-sdk/client-dynamodb`, `@aws-sdk/lib-dynamodb` (v3)
+- **Local Infrastructure:** Docker Compose (`amazon/dynamodb-local` + `amazon/aws-cli`)
+- **Testing:** Jest + `aws-sdk-client-mock`
 
-## Stack e ferramentas
-
-- Node.js `v20.x`
-- Serverless Framework + `serverless-offline`
-- AWS SDK for JavaScript v3 (`@aws-sdk/client-dynamodb`, `@aws-sdk/lib-dynamodb`)
-- Amazon DynamoDB Local (executado via Java JRE)
-- AWS CLI v2
-
-## Estrutura do projeto
+## Project Structure
 
 ```text
 javascript_serverless_api/
-├── serverless.yml                  # Definição IaC (rotas, Lambdas, IAM e tabela DynamoDB)
+├── docker-compose.yml              # DynamoDB Local + automated table provisioning
+├── serverless.yml                  # IaC (Lambda functions, HTTP routes, IAM, DynamoDB table)
 ├── package.json
-└── src/
-    ├── database/
-    │   └── dynamoClient.js         # Cliente DynamoDB configurado para alternar local/nuvem via IS_OFFLINE
-    ├── handlers/
-    │   ├── hello.js                # GET /hello (health check inicial)
-    │   ├── createCustomer.js       # POST /clients
-    │   ├── listCustomers.js        # GET /clients
-    │   └── getCustomer.js          # GET /clients/{id}
-    ├── services/
-    │   └── customerService.js      # Regras de negócio, validação de UUID e comandos do SDK v3
-    └── utils/
-        └── httpResponse.js         # Padronização de respostas HTTP e headers CORS
+├── src/
+│   ├── database/
+│   │   └── dynamoClient.js         # DynamoDB DocumentClient (switches local/AWS via IS_OFFLINE)
+│   ├── handlers/
+│   │   ├── hello.js                # GET /dev/hello (health check)
+│   │   ├── createCustomer.js       # POST /dev/clients
+│   │   ├── listCustomers.js        # GET /dev/clients
+│   │   ├── getCustomer.js          # GET /dev/clients/{id}
+│   │   ├── updateCustomerPoints.js # PATCH /dev/clients/{id}/points
+│   │   └── deleteCustomer.js       # DELETE /dev/clients/{id}
+│   ├── services/
+│   │   └── customerService.js      # Business logic, UUID validation & DynamoDB SDK v3 commands
+│   └── utils/
+│       └── httpResponse.js         # Standardized API Gateway Proxy responses & CORS headers
+└── tests/
+    └── customerService.test.js     # Unit tests with mocked DynamoDB DocumentClient
 
 ```
 
-## Nota sobre o ambiente local
+## Running Locally
 
-Inicialmente o projeto usava o plugin `serverless-dynamodb-local`, mas ele ainda depende internamente do AWS SDK v2 e gera conflito de validação de credenciais (`UnrecognizedClientException`) com versões recentes do DynamoDB Local.
-
-Para evitar gambiarras em plugin sem manutenção, o banco passou a rodar diretamente via JAR oficial da AWS com as flags `-sharedDb` e `-inMemory`, e a tabela é provisionada via AWS CLI apontando para `http://localhost:8000`. As credenciais configuradas no ambiente local (`fakeMyKeyId` / `fakeSecretAccessKey`) servem apenas para satisfazer a assinatura exigida pelo SDK.
-
-## Como executar localmente
-
-### Pré-requisitos
+### Prerequisites
 
 * Node.js 20+
-* Java JRE instalado (para rodar o DynamoDB Local)
-* AWS CLI instalado e configurado com credenciais fictícias (`aws configure`, região `us-east-1`)
-* Binários do DynamoDB Local baixados em `.dynamodb/`
+* Docker & Docker Compose
 
-### Passo a passo
+### Setup & Start
 
-1. Instale as dependências:
+1. Install dependencies:
 
 ```bash
 npm install
 
 ```
 
-2. **Terminal 1** — suba o DynamoDB Local em memória na porta `8000`:
+2. Start DynamoDB Local and automatically provision the `ClientsFidelity` table:
 
 ```bash
-java -Djava.library.path=./.dynamodb/DynamoDBLocal_lib -jar ./.dynamodb/DynamoDBLocal.jar -sharedDb -inMemory -port 8000
+docker compose up -d
 
 ```
 
-3. **Terminal 2** — crie a tabela `ClientsFidelity` no banco local via AWS CLI:
+3. Start the API Gateway & Lambda emulator:
 
 ```bash
-aws dynamodb create-table \
-  --table-name ClientsFidelity \
-  --attribute-definitions AttributeName=id,AttributeType=S \
-  --key-schema AttributeName=id,KeyType=HASH \
-  --billing-mode PAY_PER_REQUEST \
-  --endpoint-url http://localhost:8000
+npx serverless offline
 
 ```
 
-4. Ainda no **Terminal 2**, inicie o emulador do API Gateway e das funções Lambda:
+The API will be available at `http://localhost:3000/dev`.
 
-```bash
-npx sls offline
+## API Endpoints
 
-```
-
-A API ficará disponível em `http://localhost:3000/dev`.
-
-## Endpoints
-
-| Método | Rota | Operação DynamoDB | Respostas |
+| Method | Endpoint | DynamoDB Operation | Responses |
 | --- | --- | --- | --- |
 | `GET` | `/dev/hello` | - | `200 OK` |
 | `POST` | `/dev/clients` | `PutItem` | `201 Created`, `400 Bad Request` |
 | `GET` | `/dev/clients` | `Scan` | `200 OK`, `500 Internal Server Error` |
-| `GET` | `/dev/clients/{id}` | `GetItem` | `200 OK`, `400 Bad Request` (UUID inválido), `404 Not Found` |
+| `GET` | `/dev/clients/{id}` | `GetItem` | `200 OK`, `400 Bad Request`, `404 Not Found` |
+| `PATCH` | `/dev/clients/{id}/points` | `UpdateItem` (atomic) | `200 OK`, `400 Bad Request`, `404 Not Found` |
+| `DELETE` | `/dev/clients/{id}` | `DeleteItem` (conditional) | `200 OK`, `400 Bad Request`, `404 Not Found` |
 
-### Exemplos com `curl`
+### Example Requests
 
-Criar cliente (inicia automaticamente com `10` pontos de fidelidade):
+Create a client (defaults to `10` fidelity points):
 
 ```bash
 curl -i -X POST http://localhost:3000/dev/clients \
@@ -115,45 +100,48 @@ curl -i -X POST http://localhost:3000/dev/clients \
 
 ```
 
-Listar todos os clientes:
+List all clients:
 
 ```bash
 curl -i http://localhost:3000/dev/clients
 
 ```
 
-Buscar cliente por ID:
+Get a client by UUID:
 
 ```bash
 curl -i http://localhost:3000/dev/clients/<UUID>
 
 ```
 
-Inspecionar a tabela diretamente via AWS CLI:
+Atomically add/subtract loyalty points:
 
 ```bash
-aws dynamodb scan --table-name ClientsFidelity --endpoint-url http://localhost:8000
+curl -i -X PATCH http://localhost:3000/dev/clients/<UUID>/points \
+  -H "Content-Type: application/json" \
+  -d '{"points": 50}'
 
 ```
 
-## Progresso e próximos passos
+Delete a client:
 
-* [x] Estrutura base com Serverless Framework e `serverless-offline`
-* [x] Integração local com DynamoDB via AWS SDK v3 e AWS CLI
-* [x] Cadastro (`POST /clients`) e listagem (`GET /clients`)
-* [x] Busca por chave de partição (`GET /clients/{id}`) com validação de UUID e respostas padronizadas
-* [ ] Padronizar `createCustomer` e `listCustomers` com `src/utils/httpResponse.js`
-* [ ] Atualização atômica de pontos de fidelidade (`PATCH /clients/{id}/points` com `UpdateCommand`)
-* [ ] Remoção de cliente (`DELETE /clients/{id}` com `DeleteCommand`)
-* [ ] Script shell (`.sh`) para automatizar a subida e o encerramento do ambiente local
+```bash
+curl -i -X DELETE http://localhost:3000/dev/clients/<UUID>
 
-## Referência de estudo
+```
 
-Projeto desenvolvido como prática complementar ao curso **AWS Cloud Practitioner Essentials (Português)** — AWS Training & Certification (concluído em maio de 2026).
+## Running Tests
 
-## Autor
+Unit tests mock the AWS SDK v3 `DynamoDBDocumentClient` via `aws-sdk-client-mock` and run without requiring Docker or DynamoDB Local:
 
-Augusto Ortigoso Barbosa
+```bash
+npm test
+
+```
+
+## Author
+
+**Augusto Ortigoso Barbosa**
 
 * GitHub: https://github.com/supp3rguto
 * LinkedIn: https://www.linkedin.com/in/augusto-barbosa-769602194
