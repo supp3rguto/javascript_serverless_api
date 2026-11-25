@@ -1,18 +1,9 @@
-const { UpdateCommand } = require("@aws-sdk/lib-dynamodb");
-const dynamoDB = require("../database/dynamoClient");
+const { updateClientPoints } = require("../services/customerService");
 const { ok, badRequest, notFound, serverError } = require("../utils/httpResponse");
-
-const TABLE_NAME = "ClientsFidelity";
-const UUID_V4_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 module.exports.handler = async (event) => {
   try {
     const { id } = event.pathParameters || {};
-
-    if (!id || !UUID_V4_REGEX.test(id)) {
-      return badRequest("Invalid client ID format. Expected a valid UUID.");
-    }
 
     let body;
     try {
@@ -21,36 +12,15 @@ module.exports.handler = async (event) => {
       return badRequest("Invalid JSON payload.");
     }
 
-    const { points } = body;
-
-    if (typeof points !== "number" || !Number.isInteger(points) || points === 0) {
-      return badRequest("Field 'points' must be a non-zero integer.");
-    }
-
-    const command = new UpdateCommand({
-      TableName: TABLE_NAME,
-      Key: { id },
-      UpdateExpression:
-        "SET fidelityPoints = if_not_exists(fidelityPoints, :zero) + :delta, updatedAt = :updatedAt",
-      ConditionExpression: "attribute_exists(id)",
-      ExpressionAttributeValues: {
-        ":zero": 0,
-        ":delta": points,
-        ":updatedAt": new Date().toISOString(),
-      },
-      ReturnValues: "ALL_NEW",
-    });
-
-    const result = await dynamoDB.send(command);
+    const updatedClient = await updateClientPoints(id, body.points);
 
     return ok({
       message: "Client points updated successfully.",
-      client: result.Attributes,
+      client: updatedClient,
     });
   } catch (err) {
-    if (err.name === "ConditionalCheckFailedException") {
-      return notFound("Client not found.");
-    }
+    if (err.statusCode === 400) return badRequest(err.message);
+    if (err.statusCode === 404) return notFound(err.message);
 
     console.error("Error updating client points:", err);
     return serverError();
