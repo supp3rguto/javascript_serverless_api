@@ -40,6 +40,18 @@ functions:
       - http:
           path: /clients/{id}
           method: get
+  updateCustomerPoints:
+    handler: src/handlers/updateCustomerPoints.handler
+    events:
+      - http:
+          path: /clients/{id}/points
+          method: patch
+  deleteCustomer:
+    handler: src/handlers/deleteCustomer.handler
+    events:
+      - http:
+          path: /clients/{id}
+          method: delete
 
 resources:
   Resources:
